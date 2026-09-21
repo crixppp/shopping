@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Shopping">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f4ef">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101315">
+    <meta name="color-scheme" content="light dark">
+    <title>Shopping</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="./icon.svg">
+    <link rel="apple-touch-icon" href="./icon.svg">
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="progress" aria-hidden="true">
+      <span id="progressFill"></span>
+    </div>
+
+    <main class="app is-empty" id="app">
+      <section class="empty-state" id="emptyState" aria-label="Import shopping list">
+        <button class="import-button" id="importButton" type="button">Import list</button>
+      </section>
+
+      <section class="fallback hidden" id="fallback" aria-label="Paste shopping list">
+        <label class="sr-only" for="pasteInput">Paste shopping list</label>
+        <textarea id="pasteInput" spellcheck="false" autocomplete="off" autocapitalize="sentences" rows="6" placeholder="Paste list"></textarea>
+        <button class="confirm-button" id="pasteConfirm" type="button">Import</button>
+      </section>
+
+      <section class="fallback hidden" id="preview" aria-label="Edit imported items">
+        <label class="sr-only" for="previewInput">Edit imported items</label>
+        <textarea id="previewInput" spellcheck="false" autocomplete="off" autocapitalize="sentences" rows="7"></textarea>
+        <button class="confirm-button" id="previewConfirm" type="button">Import</button>
+      </section>
+
+      <ol class="shopping-list" id="shoppingList" aria-label="Shopping list"></ol>
+    </main>
+
+    <div class="undo hidden" id="undo" role="group" aria-label="Removed item">
+      <span aria-live="polite">Removed</span>
+      <button id="undoButton" type="button">Undo</button>
+    </div>
+
+    <div class="confirm hidden" id="resetConfirm" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+      <div class="confirm-panel">
+        <p id="resetTitle">Replace current list?</p>
+        <div class="confirm-actions">
+          <button id="resetCancel" type="button">Cancel</button>
+          <button id="resetImport" type="button">Import</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shopping">
+  <rect width="512" height="512" rx="112" fill="#f6f4ef"/>
+  <rect x="112" y="102" width="288" height="328" rx="48" fill="#fffdfa" stroke="#d7d1c7" stroke-width="16"/>
+  <path d="M180 182h152M180 256h152M180 330h104" stroke="#171717" stroke-width="28" stroke-linecap="round"/>
+  <path d="M126 180l22 22 42-54" fill="none" stroke="#2f6f62" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M126 254l22 22 42-54" fill="none" stroke="#2f6f62" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
