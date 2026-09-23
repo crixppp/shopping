@@ -24,6 +24,10 @@
     <main class="app is-empty" id="app">
       <section class="empty-state" id="emptyState" aria-label="Import shopping list">
         <button class="import-button" id="importButton" type="button">Import list</button>
+        <footer class="home-meta" aria-label="App information">
+          <span>made by sam gilliot</span>
+          <span>v1.1.0</span>
+        </footer>
       </section>
 
       <section class="fallback hidden" id="fallback" aria-label="Paste shopping list">
@@ -41,7 +45,8 @@
       <ol class="shopping-list" id="shoppingList" aria-label="Shopping list"></ol>
     </main>
 
-    <div class="undo-swipe-zone" id="undoSwipeZone" aria-hidden="true"></div>
+    <div class="undo-swipe-zone is-top" id="undoSwipeTop" aria-hidden="true"></div>
+    <div class="undo-swipe-zone is-bottom" id="undoSwipeBottom" aria-hidden="true"></div>
 
     <div class="undo hidden" id="undo" role="group" aria-label="Removed item">
       <span id="undoStatus" aria-live="polite">Removed</span>

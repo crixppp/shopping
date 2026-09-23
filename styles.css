@@ -105,7 +105,7 @@ textarea:focus-visible {
   background: var(--accent);
   opacity: 0.72;
   transform-origin: left center;
-  transition: width 220ms ease;
+  transition: width 360ms cubic-bezier(.22, 1, .36, 1);
 }
 
 .app {
@@ -120,10 +120,29 @@ textarea:focus-visible {
 }
 
 .empty-state {
+  position: relative;
   min-height: 100svh;
   display: grid;
   place-items: center;
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.home-meta {
+  position: absolute;
+  top: 75%;
+  left: 50%;
+  width: 100%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 3px;
+  color: color-mix(in srgb, var(--text) 34%, var(--bg));
+  font-size: 0.78rem;
+  font-weight: 560;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .import-button,
@@ -137,20 +156,22 @@ textarea:focus-visible {
 }
 
 .import-button {
-  min-height: 58px;
-  padding: 0 28px;
-  border-radius: 999px;
-  background: var(--button);
-  color: var(--button-text);
-  font-size: 1.05rem;
-  font-weight: 700;
+  width: 100%;
+  min-height: 66px;
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  padding: 18px 20px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 730;
   letter-spacing: 0;
   box-shadow: var(--shadow);
-  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  transition: transform 220ms cubic-bezier(.22, 1, .36, 1), box-shadow 220ms ease, opacity 220ms ease;
 }
 
 .import-button:active {
-  transform: scale(0.97);
+  transform: scale(0.985);
   box-shadow: 0 8px 22px rgba(35, 31, 27, 0.08);
 }
 
@@ -204,6 +225,9 @@ textarea:focus-visible {
   margin: 0 0 12px;
   transform-origin: center;
   will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .item-card {
@@ -227,8 +251,10 @@ textarea:focus-visible {
   letter-spacing: 0;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
   touch-action: pan-y;
-  transition: transform 150ms ease, opacity 190ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition: transform 220ms cubic-bezier(.22, 1, .36, 1), opacity 260ms ease, border-color 220ms ease, box-shadow 220ms ease;
 }
 
 .item-card span {
@@ -239,6 +265,10 @@ textarea:focus-visible {
 .separator,
 .name {
   overflow-wrap: anywhere;
+}
+
+.name {
+  text-transform: capitalize;
 }
 
 .separator {
@@ -255,6 +285,7 @@ textarea:focus-visible {
   pointer-events: none;
   transform: translate3d(0, 18px, 0) rotate(1.4deg) scale(0.94);
   opacity: 0;
+  transition: transform 300ms cubic-bezier(.4, 0, .2, 1), opacity 300ms cubic-bezier(.4, 0, 1, 1);
 }
 
 .item.is-dragging {
@@ -274,11 +305,19 @@ textarea:focus-visible {
   position: fixed;
   z-index: 29;
   right: 0;
-  bottom: 0;
   left: 0;
-  height: max(132px, calc(env(safe-area-inset-bottom) + 112px));
   display: none;
   touch-action: none;
+}
+
+.undo-swipe-zone.is-top {
+  top: 0;
+  height: max(112px, calc(env(safe-area-inset-top) + 92px));
+}
+
+.undo-swipe-zone.is-bottom {
+  bottom: 0;
+  height: max(112px, calc(env(safe-area-inset-bottom) + 92px));
 }
 
 body.can-undo .undo-swipe-zone {
@@ -286,13 +325,13 @@ body.can-undo .undo-swipe-zone {
 }
 
 .undo {
-  --undo-pull: 0;
+  --undo-pull-y: 0;
   --undo-progress: 0;
   position: fixed;
   z-index: 30;
   left: 50%;
   bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px));
-  transform: translate3d(-50%, calc(var(--undo-pull) * -1px), 0) scale(calc(1 + var(--undo-progress) * 0.035));
+  transform: translate3d(-50%, calc(var(--undo-pull-y) * 1px), 0) scale(calc(1 + var(--undo-progress) * 0.035));
   min-height: 46px;
   max-width: min(90vw, 360px);
   display: flex;
@@ -310,6 +349,11 @@ body.can-undo .undo-swipe-zone {
   will-change: transform;
   touch-action: none;
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.undo.is-from-top {
+  top: max(18px, calc(env(safe-area-inset-top) + 14px));
+  bottom: auto;
 }
 
 .undo.is-pulling {

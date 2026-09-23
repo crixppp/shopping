@@ -21,7 +21,8 @@ const progressFill = document.querySelector("#progressFill");
 const undo = document.querySelector("#undo");
 const undoStatus = document.querySelector("#undoStatus");
 const undoButton = document.querySelector("#undoButton");
-const undoSwipeZone = document.querySelector("#undoSwipeZone");
+const undoSwipeTop = document.querySelector("#undoSwipeTop");
+const undoSwipeBottom = document.querySelector("#undoSwipeBottom");
 const resetConfirm = document.querySelector("#resetConfirm");
 const resetCancel = document.querySelector("#resetCancel");
 const resetImport = document.querySelector("#resetImport");
@@ -70,6 +71,10 @@ function escapeHtml(value) {
     "\"": "&quot;",
     "'": "&#039;"
   })[char]);
+}
+
+function titleCase(value) {
+  return value.replace(/(^|[\s/(-])(\p{L})/gu, (match, prefix, letter) => `${prefix}${letter.toLocaleUpperCase()}`);
 }
 
 function parseItem(rawValue) {
@@ -143,10 +148,11 @@ function loadState() {
 }
 
 function itemTemplate(item) {
-  const label = item.quantity ? `${item.quantity} ${item.name}` : item.name;
+  const name = titleCase(item.name);
+  const label = item.quantity ? `${item.quantity} ${name}` : name;
   const content = item.quantity
-    ? `<span class="quantity">${escapeHtml(item.quantity)}</span><span class="separator" aria-hidden="true">•</span><span class="name">${escapeHtml(item.name)}</span>`
-    : `<span class="name">${escapeHtml(item.name)}</span>`;
+    ? `<span class="quantity">${escapeHtml(item.quantity)}</span><span class="separator" aria-hidden="true">•</span><span class="name">${escapeHtml(name)}</span>`
+    : `<span class="name">${escapeHtml(name)}</span>`;
 
   return `
     <li class="item" data-id="${item.id}">
@@ -195,7 +201,7 @@ function animateFrom(first, options = {}) {
           { opacity: 0, transform: "translate3d(0, 10px, 0) scale(0.985)" },
           { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" }
         ],
-        { duration: 210, easing: "cubic-bezier(.2,.8,.2,1)" }
+        { duration: options.duration || 360, easing: "cubic-bezier(.22,1,.36,1)" }
       );
       continue;
     }
@@ -210,7 +216,7 @@ function animateFrom(first, options = {}) {
         { transform: `translate3d(${dx}px, ${dy}px, 0)` },
         { transform: "translate3d(0, 0, 0)" }
       ],
-      { duration: 260, easing: "cubic-bezier(.2,.9,.2,1)" }
+      { duration: options.duration || 480, easing: "cubic-bezier(.22,1,.36,1)" }
     );
   }
 }
@@ -331,7 +337,7 @@ function completeItem(id) {
     renderList();
     animateFrom(first);
     showUndo();
-  }, 190);
+  }, 300);
 }
 
 function updateUndoStatus() {
@@ -352,26 +358,26 @@ function showUndo(options = {}) {
 function hideUndo() {
   window.clearTimeout(undoTimer);
   undo.classList.add("hidden");
-  undo.classList.remove("is-pulling", "is-armed");
-  undo.style.removeProperty("--undo-pull");
+  undo.classList.remove("is-pulling", "is-armed", "is-from-top");
+  undo.style.removeProperty("--undo-pull-y");
   undo.style.removeProperty("--undo-progress");
 }
 
-function animateUndoRelease(startLift, activated) {
+function animateUndoRelease(startLift, activated, direction) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
     return Promise.resolve();
   }
 
   const keyframes = activated
     ? [
-        { transform: `translate3d(-50%, ${-startLift}px, 0) scale(1.035)` },
-        { transform: "translate3d(-50%, 9px, 0) scale(0.965)", offset: 0.42 },
-        { transform: "translate3d(-50%, -5px, 0) scale(1.018)", offset: 0.72 },
+        { transform: `translate3d(-50%, ${startLift * direction}px, 0) scale(1.035)` },
+        { transform: `translate3d(-50%, ${-9 * direction}px, 0) scale(0.965)`, offset: 0.42 },
+        { transform: `translate3d(-50%, ${5 * direction}px, 0) scale(1.018)`, offset: 0.72 },
         { transform: "translate3d(-50%, 0, 0) scale(1)" }
       ]
     : [
-        { transform: `translate3d(-50%, ${-startLift}px, 0) scale(1.015)` },
-        { transform: "translate3d(-50%, 6px, 0) scale(0.985)", offset: 0.58 },
+        { transform: `translate3d(-50%, ${startLift * direction}px, 0) scale(1.015)` },
+        { transform: `translate3d(-50%, ${-6 * direction}px, 0) scale(0.985)`, offset: 0.58 },
         { transform: "translate3d(-50%, 0, 0) scale(1)" }
       ];
 
@@ -473,7 +479,7 @@ function moveDrag(event) {
     const afterDrag = drag.element.getBoundingClientRect();
     drag.originY += afterDrag.top - beforeDrag.top;
     drag.element.style.transform = `translate3d(0, ${drag.pointerY - drag.originY - drag.grabOffsetY}px, 0)`;
-    animateFrom(first, { excludeId: drag.id });
+    animateFrom(first, { excludeId: drag.id, duration: 260 });
   }
 }
 
@@ -573,9 +579,9 @@ function handleCardClick(event) {
   completeItem(element.dataset.id);
 }
 
-function setUndoPull(pull) {
+function setUndoPull(pull, direction) {
   const lift = Math.min(SWIPE_MAX_LIFT, pull * (pull < SWIPE_THRESHOLD ? 0.82 : 0.58) + Math.max(0, pull - SWIPE_THRESHOLD) * 0.16);
-  undo.style.setProperty("--undo-pull", lift.toFixed(2));
+  undo.style.setProperty("--undo-pull-y", (lift * direction).toFixed(2));
   undo.style.setProperty("--undo-progress", Math.min(1, pull / SWIPE_THRESHOLD).toFixed(3));
   return lift;
 }
@@ -584,12 +590,17 @@ function startUndoSwipe(event) {
   if (!state.removed.length || undoSwipe || event.button > 0 || !resetConfirm.classList.contains("hidden")) {
     return;
   }
-  if (event.clientY < window.innerHeight - SWIPE_START_ZONE) {
+  const fromTop = event.currentTarget === undoSwipeTop || (event.currentTarget === undo && undo.classList.contains("is-from-top"));
+  const inStartZone = fromTop
+    ? event.clientY <= SWIPE_START_ZONE
+    : event.clientY >= window.innerHeight - SWIPE_START_ZONE;
+  if (!inStartZone) {
     return;
   }
 
   window.clearTimeout(undoTimer);
   showUndo({ autoHide: false });
+  undo.classList.toggle("is-from-top", fromTop);
   undo.classList.add("is-pulling");
   undoSwipe = {
     pointerId: event.pointerId,
@@ -597,6 +608,7 @@ function startUndoSwipe(event) {
     startY: event.clientY,
     pull: 0,
     lift: 0,
+    direction: fromTop ? 1 : -1,
     armed: false,
     thresholdHaptic: false,
     moved: false
@@ -615,7 +627,7 @@ function moveUndoSwipe(event) {
   }
 
   const dx = event.clientX - undoSwipe.startX;
-  const pull = Math.max(0, undoSwipe.startY - event.clientY);
+  const pull = Math.max(0, (event.clientY - undoSwipe.startY) * undoSwipe.direction);
   if (Math.abs(dx) > pull * 1.25 && Math.abs(dx) > MOVE_TOLERANCE) {
     endUndoSwipe(event, true);
     return;
@@ -627,7 +639,7 @@ function moveUndoSwipe(event) {
   event.preventDefault();
   undoSwipe.moved = undoSwipe.moved || pull > MOVE_TOLERANCE;
   undoSwipe.pull = pull;
-  undoSwipe.lift = setUndoPull(pull);
+  undoSwipe.lift = setUndoPull(pull, undoSwipe.direction);
   const armed = pull >= SWIPE_THRESHOLD;
   undo.classList.toggle("is-armed", armed);
   undoSwipe.armed = armed;
@@ -646,7 +658,7 @@ function endUndoSwipe(event, cancelled = false) {
   const swipe = undoSwipe;
   undoSwipe = null;
   undo.classList.remove("is-pulling", "is-armed");
-  undo.style.removeProperty("--undo-pull");
+  undo.style.removeProperty("--undo-pull-y");
   undo.style.removeProperty("--undo-progress");
 
   const activated = !cancelled && swipe.armed;
@@ -657,8 +669,8 @@ function endUndoSwipe(event, cancelled = false) {
     }, 360);
   }
 
-  animateUndoRelease(swipe.lift, activated).then(() => {
-    if (!state.removed.length) {
+  animateUndoRelease(swipe.lift, activated, swipe.direction).then(() => {
+    if (!state.removed.length || swipe.direction === 1) {
       hideUndo();
     }
   });
@@ -743,9 +755,13 @@ undo.addEventListener("click", (event) => {
   restoreLastRemoved();
 });
 undo.addEventListener("pointerdown", startUndoSwipe);
-undoSwipeZone.addEventListener("pointerdown", startUndoSwipe);
+undoSwipeTop.addEventListener("pointerdown", startUndoSwipe);
+undoSwipeBottom.addEventListener("pointerdown", startUndoSwipe);
 list.addEventListener("click", handleCardClick);
 list.addEventListener("pointerdown", handlePointerDown);
+list.addEventListener("contextmenu", (event) => event.preventDefault());
+list.addEventListener("selectstart", (event) => event.preventDefault());
+list.addEventListener("dragstart", (event) => event.preventDefault());
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
 window.addEventListener("pointermove", moveUndoSwipe, { passive: false });
 window.addEventListener("pointerup", handlePointerUp);

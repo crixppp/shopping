@@ -8,7 +8,8 @@ A tiny static shopping-list PWA designed for GitHub Pages.
 - Falls back to a focused paste box when clipboard permissions are restricted.
 - Parses common quantities such as `2kg chicken`, `2 packets rice`, `½ kg tomatoes`, and `2x avocados`.
 - Shows large tappable cards, a subtle progress line, unlimited persistent undo, reordering, dark mode, safe-area support, wake lock support, and offline caching.
-- Restores the latest removed item when you swipe upward from the bottom edge, with threshold haptics and a springy release animation.
+- Restores the latest removed item when you pull down from the top or swipe upward from the bottom, with threshold haptics and a springy release animation.
+- Title-cases imported item names and suppresses text selection and touch callouts while long-press reordering.
 - Uses only static files: HTML, CSS, JavaScript, a web app manifest, and a service worker.
 
 ## Run locally
