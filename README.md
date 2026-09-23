@@ -7,9 +7,10 @@ A tiny static shopping-list PWA designed for GitHub Pages.
 - Imports a copied shopping list from the clipboard in one tap when the browser allows it.
 - Falls back to a focused paste box when clipboard permissions are restricted.
 - Parses common quantities such as `2kg chicken`, `2 packets rice`, `½ kg tomatoes`, and `2x avocados`.
-- Shows large tappable cards, a subtle progress line, unlimited persistent undo, reordering, dark mode, safe-area support, wake lock support, and offline caching.
-- Restores the latest removed item with a downward pull from anywhere on the list, using increasing tremor and a springy recoil as tactile-style feedback.
+- Shows large tappable cards, a subtle progress line, unlimited in-session undo, reordering, dark mode, safe-area support, wake lock support, and offline caching.
+- Restores the latest removed item when the list background is double-tapped.
 - Shows a quiet finished state when every item has been removed, while keeping the full undo history available.
+- Opens on the Import screen for every fresh launch, and offers list replacement by holding any non-item area.
 - Title-cases imported item names and suppresses text selection and touch callouts while long-press reordering.
 - Uses only static files: HTML, CSS, JavaScript, a web app manifest, and a service worker.
 
@@ -33,7 +34,7 @@ When direct clipboard access is blocked, the app shows a temporary paste field, 
 
 ## Offline and PWA behavior
 
-The service worker caches the app shell after the first successful load. Existing lists, completion, undo, reordering, and manual paste import all continue to work offline because the list is stored in `localStorage`.
+The service worker caches the app shell after the first successful load, so importing and using a list continues to work offline. Lists intentionally start fresh whenever the page is opened or reloaded.
 
 The manifest uses `display: standalone`, relative paths, and repository-subpath-safe URLs so it can be added to the home screen from GitHub Pages.
 

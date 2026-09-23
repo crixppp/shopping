@@ -1,9 +1,8 @@
-const STORAGE_KEY = "shopping-list-state-v1";
 const LONG_PRESS_MS = 420;
 const RESET_PRESS_MS = 760;
 const MOVE_TOLERANCE = 9;
-const SWIPE_THRESHOLD = 82;
-const SWIPE_MAX_PULL = 104;
+const DOUBLE_TAP_MS = 340;
+const DOUBLE_TAP_DISTANCE = 28;
 
 const app = document.querySelector("#app");
 const emptyState = document.querySelector("#emptyState");
@@ -35,7 +34,7 @@ let suppressNextClick = false;
 let drag = null;
 let press = null;
 let resetPress = null;
-let undoSwipe = null;
+let lastBackgroundTap = null;
 
 function createId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
@@ -112,34 +111,6 @@ function parseList(text) {
   return parts.map(parseItem);
 }
 
-function saveState() {
-  if (!state.items.length && !state.removed.length) {
-    localStorage.removeItem(STORAGE_KEY);
-    return;
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function loadState() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    const savedRemoved = Array.isArray(saved?.removed) ? saved.removed : [];
-    if (!saved || !Array.isArray(saved.items) || (!saved.items.length && !savedRemoved.length)) {
-      return false;
-    }
-    state = {
-      items: saved.items.filter((item) => item && item.id && item.name),
-      originalCount: Math.max(Number(saved.originalCount) || saved.items.length, saved.items.length),
-      removed: savedRemoved.filter((entry) => entry?.item?.id && entry.item.name && Number.isFinite(entry.index))
-    };
-    state.originalCount = Math.max(state.originalCount, state.items.length + state.removed.length);
-    return state.items.length > 0 || state.removed.length > 0;
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    return false;
-  }
-}
-
 function itemTemplate(item) {
   const name = titleCase(item.name);
   const label = item.quantity ? `${item.quantity} ${name}` : name;
@@ -161,7 +132,6 @@ function renderList() {
   app.classList.toggle("is-empty", !hasActiveList);
   emptyState.classList.toggle("hidden", hasActiveList);
   completeState.classList.toggle("hidden", !isComplete);
-  document.body.classList.toggle("can-undo", state.removed.length > 0);
   fallback.classList.add("hidden");
   preview.classList.add("hidden");
   updateProgress();
@@ -221,8 +191,7 @@ function beginList(items) {
     originalCount: items.length,
     removed: []
   };
-  resetUndoVisual();
-  saveState();
+  lastBackgroundTap = null;
   renderList();
   requestWakeLock();
 }
@@ -320,55 +289,10 @@ function completeItem(id) {
     const [item] = state.items.splice(currentIndex, 1);
     state.removed.push({ item, index: currentIndex });
     completingIds.delete(id);
-    saveState();
     renderList();
     animateFrom(first);
     undoStatus.textContent = `${titleCase(item.name)} removed`;
   }, 300);
-}
-
-function resetUndoVisual() {
-  app.classList.remove("is-undo-pulling");
-  app.style.removeProperty("transform");
-}
-
-function setUndoPull(pull) {
-  const resisted = Math.min(SWIPE_MAX_PULL, pull * 0.58 + Math.sqrt(pull) * 1.7);
-  const tremorProgress = Math.max(0, Math.min(1.35, (pull - 18) / (SWIPE_THRESHOLD - 18)));
-  const tremor = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : Math.min(4.5, tremorProgress * 3.6);
-  const x = Math.sin(pull * 0.64) * tremor;
-  const rotation = Math.sin(pull * 0.43) * tremor * 0.07;
-  const scale = 1 - Math.min(0.012, pull * 0.0001);
-  const transform = `translate3d(${x.toFixed(2)}px, ${resisted.toFixed(2)}px, 0) rotate(${rotation.toFixed(3)}deg) scale(${scale.toFixed(4)})`;
-  app.classList.add("is-undo-pulling");
-  app.style.transform = transform;
-  return { transform };
-}
-
-function animateUndoRelease(visual, activated) {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    resetUndoVisual();
-    return Promise.resolve();
-  }
-
-  const keyframes = activated
-    ? [
-        { transform: visual.transform },
-        { transform: "translate3d(0, -8px, 0) scale(0.992)", offset: 0.44 },
-        { transform: "translate3d(0, 4px, 0) scale(1.004)", offset: 0.72 },
-        { transform: "translate3d(0, 0, 0) scale(1)" }
-      ]
-    : [
-        { transform: visual.transform },
-        { transform: "translate3d(0, -5px, 0) scale(0.996)", offset: 0.58 },
-        { transform: "translate3d(0, 0, 0) scale(1)" }
-      ];
-
-  resetUndoVisual();
-  return app.animate(keyframes, {
-    duration: activated ? 430 : 300,
-    easing: "cubic-bezier(.22,1,.36,1)"
-  }).finished.catch(() => {});
 }
 
 function restoreLastRemoved() {
@@ -380,7 +304,6 @@ function restoreLastRemoved() {
   const first = measureItems();
   const index = Math.min(Math.max(removed.index, 0), state.items.length);
   state.items.splice(index, 0, removed.item);
-  saveState();
   renderList();
   animateFrom(first);
   undoStatus.textContent = `${titleCase(removed.item.name)} restored`;
@@ -390,9 +313,7 @@ function restoreLastRemoved() {
 function resetToInitial() {
   state = { items: [], originalCount: 0, removed: [] };
   completingIds.clear();
-  undoSwipe = null;
-  resetUndoVisual();
-  localStorage.removeItem(STORAGE_KEY);
+  lastBackgroundTap = null;
   renderList();
   wakeIntent = false;
   if (wakeLock) {
@@ -404,14 +325,12 @@ function resetToInitial() {
 function reorderStateFromDom() {
   const byId = new Map(state.items.map((item) => [item.id, item]));
   state.items = [...list.children].map((element) => byId.get(element.dataset.id)).filter(Boolean);
-  saveState();
 }
 
 function startDrag(element, event) {
   if (drag || completingIds.has(element.dataset.id)) {
     return;
   }
-  undoSwipe = null;
   const rect = element.getBoundingClientRect();
   drag = {
     id: element.dataset.id,
@@ -513,10 +432,6 @@ function handlePointerDown(event) {
 }
 
 function handlePointerMove(event) {
-  if (undoSwipe?.engaged) {
-    cancelPress();
-    return;
-  }
   if (drag) {
     moveDrag(event);
     return;
@@ -556,94 +471,11 @@ function handleCardClick(event) {
   completeItem(element.dataset.id);
 }
 
-function startUndoSwipe(event) {
-  if (!state.removed.length || undoSwipe || event.button > 0 || !resetConfirm.classList.contains("hidden") || event.target.closest("textarea, .confirm")) {
-    return;
-  }
-  undoSwipe = {
-    pointerId: event.pointerId,
-    source: event.target,
-    startX: event.clientX,
-    startY: event.clientY,
-    visual: { transform: "translate3d(0, 0, 0)" },
-    armed: false,
-    engaged: false
-  };
-}
-
-function moveUndoSwipe(event) {
-  if (!undoSwipe || event.pointerId !== undoSwipe.pointerId) {
-    return;
-  }
-
-  const dx = event.clientX - undoSwipe.startX;
-  const dy = event.clientY - undoSwipe.startY;
-  if (!undoSwipe.engaged && (dy < -MOVE_TOLERANCE || (Math.abs(dx) > Math.max(dy, 0) * 1.25 && Math.abs(dx) > MOVE_TOLERANCE))) {
-    undoSwipe = null;
-    return;
-  }
-  if (dy < MOVE_TOLERANCE) {
-    return;
-  }
-
-  event.preventDefault();
-  if (!undoSwipe.engaged) {
-    undoSwipe.engaged = true;
-    cancelPress();
-    clearResetPress();
-    try {
-      undoSwipe.source.setPointerCapture?.(event.pointerId);
-    } catch {
-      // Window-level tracking still handles the gesture without capture.
-    }
-  }
-
-  const pull = Math.max(0, dy);
-  undoSwipe.visual = setUndoPull(pull);
-  undoSwipe.armed = pull >= SWIPE_THRESHOLD;
-}
-
-function endUndoSwipe(event, cancelled = false) {
-  if (!undoSwipe || event.pointerId !== undoSwipe.pointerId) {
-    return;
-  }
-
-  const swipe = undoSwipe;
-  undoSwipe = null;
-  if (!swipe.engaged) {
-    return;
-  }
-
-  const activated = !cancelled && swipe.armed;
-  suppressNextClick = true;
-  window.setTimeout(() => {
-    suppressNextClick = false;
-  }, 360);
-  animateUndoRelease(swipe.visual, activated);
-
-  if (activated) {
-    restoreLastRemoved();
-  }
-}
-
-function cancelUndoSwipe() {
-  if (!undoSwipe) {
-    return;
-  }
-  const swipe = undoSwipe;
-  undoSwipe = null;
-  if (swipe.engaged) {
-    animateUndoRelease(swipe.visual, false);
-  } else {
-    resetUndoVisual();
-  }
-}
-
 function showResetConfirm() {
-  cancelUndoSwipe();
-  if (!state.items.length) {
+  if (!state.items.length && !state.removed.length) {
     return;
   }
+  lastBackgroundTap = null;
   resetConfirm.classList.remove("hidden");
   resetCancel.focus();
 }
@@ -661,14 +493,18 @@ function clearResetPress() {
 }
 
 function maybeStartBackgroundPress(event) {
-  if (!state.items.length || event.target.closest(".item, button, textarea, .confirm")) {
+  const hasActiveList = state.items.length > 0 || state.removed.length > 0;
+  if (!hasActiveList || event.button > 0 || event.target.closest(".item, button, textarea, .confirm")) {
     return;
   }
   resetPress = {
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
-    timer: window.setTimeout(showResetConfirm, RESET_PRESS_MS)
+    timer: window.setTimeout(() => {
+      resetPress = null;
+      showResetConfirm();
+    }, RESET_PRESS_MS)
   };
 }
 
@@ -680,6 +516,36 @@ function handleBackgroundMove(event) {
   if (distance > MOVE_TOLERANCE) {
     clearResetPress();
   }
+}
+
+function registerBackgroundTap(x, y) {
+  if (!state.removed.length) {
+    lastBackgroundTap = null;
+    return;
+  }
+
+  const now = performance.now();
+  const isDoubleTap = lastBackgroundTap
+    && now - lastBackgroundTap.time <= DOUBLE_TAP_MS
+    && Math.hypot(x - lastBackgroundTap.x, y - lastBackgroundTap.y) <= DOUBLE_TAP_DISTANCE;
+
+  if (isDoubleTap) {
+    lastBackgroundTap = null;
+    restoreLastRemoved();
+    return;
+  }
+
+  lastBackgroundTap = { time: now, x, y };
+}
+
+function finishBackgroundPress(event) {
+  if (!resetPress || event.pointerId !== resetPress.pointerId) {
+    return;
+  }
+  const completedPress = resetPress;
+  resetPress = null;
+  window.clearTimeout(completedPress.timer);
+  registerBackgroundTap(event.clientX, event.clientY);
 }
 
 function importPreviewText() {
@@ -710,16 +576,12 @@ list.addEventListener("pointerdown", handlePointerDown);
 list.addEventListener("contextmenu", (event) => event.preventDefault());
 list.addEventListener("selectstart", (event) => event.preventDefault());
 list.addEventListener("dragstart", (event) => event.preventDefault());
-document.addEventListener("pointerdown", startUndoSwipe);
-window.addEventListener("pointermove", moveUndoSwipe, { passive: false });
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
-window.addEventListener("pointerup", endUndoSwipe);
-window.addEventListener("pointercancel", (event) => endUndoSwipe(event, true));
 window.addEventListener("pointerup", handlePointerUp);
 window.addEventListener("pointercancel", handlePointerUp);
 document.addEventListener("pointerdown", maybeStartBackgroundPress);
 document.addEventListener("pointermove", handleBackgroundMove);
-document.addEventListener("pointerup", clearResetPress);
+document.addEventListener("pointerup", finishBackgroundPress);
 document.addEventListener("pointercancel", clearResetPress);
 resetCancel.addEventListener("click", hideResetConfirm);
 resetImport.addEventListener("click", () => {
@@ -738,11 +600,5 @@ document.addEventListener("pointerdown", () => {
   }
 }, { passive: true });
 
-if (loadState()) {
-  renderList();
-  requestWakeLock();
-} else {
-  renderList();
-}
-
+renderList();
 registerServiceWorker();

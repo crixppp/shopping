@@ -111,7 +111,7 @@ textarea:focus-visible {
 .app {
   min-height: 100svh;
   padding: env(safe-area-inset-top) 0 max(44px, env(safe-area-inset-bottom));
-  transform-origin: top center;
+  touch-action: manipulation;
 }
 
 .empty-state,
@@ -237,15 +237,6 @@ textarea:focus-visible {
   font-size: 1.02rem;
   font-weight: 650;
   letter-spacing: 0;
-}
-
-body.can-undo .app,
-body.can-undo .item-card {
-  touch-action: pan-up;
-}
-
-.app.is-undo-pulling {
-  will-change: transform;
 }
 
 .item {
