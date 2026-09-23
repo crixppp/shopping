@@ -1,11 +1,9 @@
 const STORAGE_KEY = "shopping-list-state-v1";
-const UNDO_MS = 4000;
 const LONG_PRESS_MS = 420;
 const RESET_PRESS_MS = 760;
 const MOVE_TOLERANCE = 9;
-const SWIPE_START_ZONE = 132;
-const SWIPE_THRESHOLD = 72;
-const SWIPE_MAX_LIFT = 116;
+const SWIPE_THRESHOLD = 82;
+const SWIPE_MAX_PULL = 104;
 
 const app = document.querySelector("#app");
 const emptyState = document.querySelector("#emptyState");
@@ -17,12 +15,9 @@ const preview = document.querySelector("#preview");
 const previewInput = document.querySelector("#previewInput");
 const previewConfirm = document.querySelector("#previewConfirm");
 const list = document.querySelector("#shoppingList");
+const completeState = document.querySelector("#completeState");
 const progressFill = document.querySelector("#progressFill");
-const undo = document.querySelector("#undo");
 const undoStatus = document.querySelector("#undoStatus");
-const undoButton = document.querySelector("#undoButton");
-const undoSwipeTop = document.querySelector("#undoSwipeTop");
-const undoSwipeBottom = document.querySelector("#undoSwipeBottom");
 const resetConfirm = document.querySelector("#resetConfirm");
 const resetCancel = document.querySelector("#resetCancel");
 const resetImport = document.querySelector("#resetImport");
@@ -35,10 +30,8 @@ let state = {
 
 let wakeLock = null;
 let wakeIntent = false;
-let undoTimer = 0;
 let completingIds = new Set();
 let suppressNextClick = false;
-let suppressUndoClick = false;
 let drag = null;
 let press = null;
 let resetPress = null;
@@ -163,13 +156,14 @@ function itemTemplate(item) {
 
 function renderList() {
   const hasActiveList = state.items.length > 0 || state.removed.length > 0;
+  const isComplete = state.items.length === 0 && state.removed.length > 0;
   list.innerHTML = state.items.map(itemTemplate).join("");
   app.classList.toggle("is-empty", !hasActiveList);
   emptyState.classList.toggle("hidden", hasActiveList);
+  completeState.classList.toggle("hidden", !isComplete);
   document.body.classList.toggle("can-undo", state.removed.length > 0);
   fallback.classList.add("hidden");
   preview.classList.add("hidden");
-  updateUndoStatus();
   updateProgress();
 }
 
@@ -227,7 +221,7 @@ function beginList(items) {
     originalCount: items.length,
     removed: []
   };
-  hideUndo();
+  resetUndoVisual();
   saveState();
   renderList();
   requestWakeLock();
@@ -299,12 +293,6 @@ async function requestWakeLock() {
   }
 }
 
-function vibrate(pattern = 8) {
-  if (navigator.vibrate) {
-    navigator.vibrate(pattern);
-  }
-}
-
 function completeItem(id) {
   if (completingIds.has(id) || drag) {
     return;
@@ -321,7 +309,6 @@ function completeItem(id) {
 
   completingIds.add(id);
   card.classList.add("completing");
-  vibrate();
 
   window.setTimeout(() => {
     const currentIndex = state.items.findIndex((item) => item.id === id);
@@ -336,58 +323,55 @@ function completeItem(id) {
     saveState();
     renderList();
     animateFrom(first);
-    showUndo();
+    undoStatus.textContent = `${titleCase(item.name)} removed`;
   }, 300);
 }
 
-function updateUndoStatus() {
-  const count = state.removed.length;
-  undoStatus.textContent = count === 1 ? "Removed" : `${count} removed`;
-  undo.setAttribute("aria-label", count === 1 ? "1 removed item" : `${count} removed items`);
+function resetUndoVisual() {
+  app.classList.remove("is-undo-pulling");
+  app.style.removeProperty("transform");
 }
 
-function showUndo(options = {}) {
-  window.clearTimeout(undoTimer);
-  updateUndoStatus();
-  undo.classList.remove("hidden");
-  if (options.autoHide !== false) {
-    undoTimer = window.setTimeout(hideUndo, UNDO_MS);
-  }
+function setUndoPull(pull) {
+  const resisted = Math.min(SWIPE_MAX_PULL, pull * 0.58 + Math.sqrt(pull) * 1.7);
+  const tremorProgress = Math.max(0, Math.min(1.35, (pull - 18) / (SWIPE_THRESHOLD - 18)));
+  const tremor = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : Math.min(4.5, tremorProgress * 3.6);
+  const x = Math.sin(pull * 0.64) * tremor;
+  const rotation = Math.sin(pull * 0.43) * tremor * 0.07;
+  const scale = 1 - Math.min(0.012, pull * 0.0001);
+  const transform = `translate3d(${x.toFixed(2)}px, ${resisted.toFixed(2)}px, 0) rotate(${rotation.toFixed(3)}deg) scale(${scale.toFixed(4)})`;
+  app.classList.add("is-undo-pulling");
+  app.style.transform = transform;
+  return { transform };
 }
 
-function hideUndo() {
-  window.clearTimeout(undoTimer);
-  undo.classList.add("hidden");
-  undo.classList.remove("is-pulling", "is-armed", "is-from-top");
-  undo.style.removeProperty("--undo-pull-y");
-  undo.style.removeProperty("--undo-progress");
-}
-
-function animateUndoRelease(startLift, activated, direction) {
+function animateUndoRelease(visual, activated) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    resetUndoVisual();
     return Promise.resolve();
   }
 
   const keyframes = activated
     ? [
-        { transform: `translate3d(-50%, ${startLift * direction}px, 0) scale(1.035)` },
-        { transform: `translate3d(-50%, ${-9 * direction}px, 0) scale(0.965)`, offset: 0.42 },
-        { transform: `translate3d(-50%, ${5 * direction}px, 0) scale(1.018)`, offset: 0.72 },
-        { transform: "translate3d(-50%, 0, 0) scale(1)" }
+        { transform: visual.transform },
+        { transform: "translate3d(0, -8px, 0) scale(0.992)", offset: 0.44 },
+        { transform: "translate3d(0, 4px, 0) scale(1.004)", offset: 0.72 },
+        { transform: "translate3d(0, 0, 0) scale(1)" }
       ]
     : [
-        { transform: `translate3d(-50%, ${startLift * direction}px, 0) scale(1.015)` },
-        { transform: `translate3d(-50%, ${-6 * direction}px, 0) scale(0.985)`, offset: 0.58 },
-        { transform: "translate3d(-50%, 0, 0) scale(1)" }
+        { transform: visual.transform },
+        { transform: "translate3d(0, -5px, 0) scale(0.996)", offset: 0.58 },
+        { transform: "translate3d(0, 0, 0) scale(1)" }
       ];
 
-  return undo.animate(keyframes, {
+  resetUndoVisual();
+  return app.animate(keyframes, {
     duration: activated ? 430 : 300,
-    easing: "cubic-bezier(.2,.8,.2,1)"
+    easing: "cubic-bezier(.22,1,.36,1)"
   }).finished.catch(() => {});
 }
 
-function restoreLastRemoved(options = {}) {
+function restoreLastRemoved() {
   const removed = state.removed.pop();
   if (!removed) {
     return false;
@@ -399,17 +383,7 @@ function restoreLastRemoved(options = {}) {
   saveState();
   renderList();
   animateFrom(first);
-  if (options.keepVisible && !state.removed.length) {
-    undoStatus.textContent = "Restored";
-    undo.setAttribute("aria-label", "Item restored");
-  }
-  vibrate(options.fromSwipe ? [10, 22, 10] : 8);
-
-  if (state.removed.length) {
-    showUndo();
-  } else if (!options.keepVisible) {
-    hideUndo();
-  }
+  undoStatus.textContent = `${titleCase(removed.item.name)} restored`;
   return true;
 }
 
@@ -417,7 +391,7 @@ function resetToInitial() {
   state = { items: [], originalCount: 0, removed: [] };
   completingIds.clear();
   undoSwipe = null;
-  hideUndo();
+  resetUndoVisual();
   localStorage.removeItem(STORAGE_KEY);
   renderList();
   wakeIntent = false;
@@ -437,6 +411,7 @@ function startDrag(element, event) {
   if (drag || completingIds.has(element.dataset.id)) {
     return;
   }
+  undoSwipe = null;
   const rect = element.getBoundingClientRect();
   drag = {
     id: element.dataset.id,
@@ -528,12 +503,20 @@ function handlePointerDown(event) {
     timer: 0
   };
 
-  if (event.pointerType !== "mouse") {
-    press.timer = window.setTimeout(() => startDrag(element, event), LONG_PRESS_MS);
-  }
+  press.timer = window.setTimeout(() => {
+    if (!press || press.pointerId !== event.pointerId) {
+      return;
+    }
+    press = null;
+    startDrag(element, event);
+  }, LONG_PRESS_MS);
 }
 
 function handlePointerMove(event) {
+  if (undoSwipe?.engaged) {
+    cancelPress();
+    return;
+  }
   if (drag) {
     moveDrag(event);
     return;
@@ -544,12 +527,6 @@ function handlePointerMove(event) {
   const dx = event.clientX - press.startX;
   const dy = event.clientY - press.startY;
   const distance = Math.hypot(dx, dy);
-  if (press.pointerType === "mouse" && distance > 5) {
-    window.clearTimeout(press.timer);
-    startDrag(press.element, event);
-    press = null;
-    return;
-  }
   if (distance > MOVE_TOLERANCE) {
     cancelPress();
   }
@@ -579,46 +556,19 @@ function handleCardClick(event) {
   completeItem(element.dataset.id);
 }
 
-function setUndoPull(pull, direction) {
-  const lift = Math.min(SWIPE_MAX_LIFT, pull * (pull < SWIPE_THRESHOLD ? 0.82 : 0.58) + Math.max(0, pull - SWIPE_THRESHOLD) * 0.16);
-  undo.style.setProperty("--undo-pull-y", (lift * direction).toFixed(2));
-  undo.style.setProperty("--undo-progress", Math.min(1, pull / SWIPE_THRESHOLD).toFixed(3));
-  return lift;
-}
-
 function startUndoSwipe(event) {
-  if (!state.removed.length || undoSwipe || event.button > 0 || !resetConfirm.classList.contains("hidden")) {
+  if (!state.removed.length || undoSwipe || event.button > 0 || !resetConfirm.classList.contains("hidden") || event.target.closest("textarea, .confirm")) {
     return;
   }
-  const fromTop = event.currentTarget === undoSwipeTop || (event.currentTarget === undo && undo.classList.contains("is-from-top"));
-  const inStartZone = fromTop
-    ? event.clientY <= SWIPE_START_ZONE
-    : event.clientY >= window.innerHeight - SWIPE_START_ZONE;
-  if (!inStartZone) {
-    return;
-  }
-
-  window.clearTimeout(undoTimer);
-  showUndo({ autoHide: false });
-  undo.classList.toggle("is-from-top", fromTop);
-  undo.classList.add("is-pulling");
   undoSwipe = {
     pointerId: event.pointerId,
+    source: event.target,
     startX: event.clientX,
     startY: event.clientY,
-    pull: 0,
-    lift: 0,
-    direction: fromTop ? 1 : -1,
+    visual: { transform: "translate3d(0, 0, 0)" },
     armed: false,
-    thresholdHaptic: false,
-    moved: false
+    engaged: false
   };
-
-  try {
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  } catch {
-    // The gesture still tracks through the window when capture is unavailable.
-  }
 }
 
 function moveUndoSwipe(event) {
@@ -627,27 +577,30 @@ function moveUndoSwipe(event) {
   }
 
   const dx = event.clientX - undoSwipe.startX;
-  const pull = Math.max(0, (event.clientY - undoSwipe.startY) * undoSwipe.direction);
-  if (Math.abs(dx) > pull * 1.25 && Math.abs(dx) > MOVE_TOLERANCE) {
-    endUndoSwipe(event, true);
+  const dy = event.clientY - undoSwipe.startY;
+  if (!undoSwipe.engaged && (dy < -MOVE_TOLERANCE || (Math.abs(dx) > Math.max(dy, 0) * 1.25 && Math.abs(dx) > MOVE_TOLERANCE))) {
+    undoSwipe = null;
     return;
   }
-  if (pull < 2) {
+  if (dy < MOVE_TOLERANCE) {
     return;
   }
 
   event.preventDefault();
-  undoSwipe.moved = undoSwipe.moved || pull > MOVE_TOLERANCE;
-  undoSwipe.pull = pull;
-  undoSwipe.lift = setUndoPull(pull, undoSwipe.direction);
-  const armed = pull >= SWIPE_THRESHOLD;
-  undo.classList.toggle("is-armed", armed);
-  undoSwipe.armed = armed;
-
-  if (armed && !undoSwipe.thresholdHaptic) {
-    undoSwipe.thresholdHaptic = true;
-    vibrate(12);
+  if (!undoSwipe.engaged) {
+    undoSwipe.engaged = true;
+    cancelPress();
+    clearResetPress();
+    try {
+      undoSwipe.source.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Window-level tracking still handles the gesture without capture.
+    }
   }
+
+  const pull = Math.max(0, dy);
+  undoSwipe.visual = setUndoPull(pull);
+  undoSwipe.armed = pull >= SWIPE_THRESHOLD;
 }
 
 function endUndoSwipe(event, cancelled = false) {
@@ -657,32 +610,37 @@ function endUndoSwipe(event, cancelled = false) {
 
   const swipe = undoSwipe;
   undoSwipe = null;
-  undo.classList.remove("is-pulling", "is-armed");
-  undo.style.removeProperty("--undo-pull-y");
-  undo.style.removeProperty("--undo-progress");
-
-  const activated = !cancelled && swipe.armed;
-  if (swipe.moved) {
-    suppressUndoClick = true;
-    window.setTimeout(() => {
-      suppressUndoClick = false;
-    }, 360);
+  if (!swipe.engaged) {
+    return;
   }
 
-  animateUndoRelease(swipe.lift, activated, swipe.direction).then(() => {
-    if (!state.removed.length || swipe.direction === 1) {
-      hideUndo();
-    }
-  });
+  const activated = !cancelled && swipe.armed;
+  suppressNextClick = true;
+  window.setTimeout(() => {
+    suppressNextClick = false;
+  }, 360);
+  animateUndoRelease(swipe.visual, activated);
 
   if (activated) {
-    restoreLastRemoved({ fromSwipe: true, keepVisible: true });
+    restoreLastRemoved();
+  }
+}
+
+function cancelUndoSwipe() {
+  if (!undoSwipe) {
+    return;
+  }
+  const swipe = undoSwipe;
+  undoSwipe = null;
+  if (swipe.engaged) {
+    animateUndoRelease(swipe.visual, false);
   } else {
-    undoTimer = window.setTimeout(hideUndo, 1000);
+    resetUndoVisual();
   }
 }
 
 function showResetConfirm() {
+  cancelUndoSwipe();
   if (!state.items.length) {
     return;
   }
@@ -703,7 +661,7 @@ function clearResetPress() {
 }
 
 function maybeStartBackgroundPress(event) {
-  if (!state.items.length || event.target.closest(".item, button, textarea, .undo, .undo-swipe-zone, .confirm")) {
+  if (!state.items.length || event.target.closest(".item, button, textarea, .confirm")) {
     return;
   }
   resetPress = {
@@ -747,27 +705,18 @@ function registerServiceWorker() {
 importButton.addEventListener("click", importFromClipboard);
 pasteConfirm.addEventListener("click", () => handleImportText(pasteInput.value));
 previewConfirm.addEventListener("click", importPreviewText);
-undo.addEventListener("click", (event) => {
-  if (suppressUndoClick) {
-    event.preventDefault();
-    return;
-  }
-  restoreLastRemoved();
-});
-undo.addEventListener("pointerdown", startUndoSwipe);
-undoSwipeTop.addEventListener("pointerdown", startUndoSwipe);
-undoSwipeBottom.addEventListener("pointerdown", startUndoSwipe);
 list.addEventListener("click", handleCardClick);
 list.addEventListener("pointerdown", handlePointerDown);
 list.addEventListener("contextmenu", (event) => event.preventDefault());
 list.addEventListener("selectstart", (event) => event.preventDefault());
 list.addEventListener("dragstart", (event) => event.preventDefault());
-window.addEventListener("pointermove", handlePointerMove, { passive: false });
+document.addEventListener("pointerdown", startUndoSwipe);
 window.addEventListener("pointermove", moveUndoSwipe, { passive: false });
-window.addEventListener("pointerup", handlePointerUp);
-window.addEventListener("pointercancel", handlePointerUp);
+window.addEventListener("pointermove", handlePointerMove, { passive: false });
 window.addEventListener("pointerup", endUndoSwipe);
 window.addEventListener("pointercancel", (event) => endUndoSwipe(event, true));
+window.addEventListener("pointerup", handlePointerUp);
+window.addEventListener("pointercancel", handlePointerUp);
 document.addEventListener("pointerdown", maybeStartBackgroundPress);
 document.addEventListener("pointermove", handleBackgroundMove);
 document.addEventListener("pointerup", clearResetPress);
@@ -791,9 +740,6 @@ document.addEventListener("pointerdown", () => {
 
 if (loadState()) {
   renderList();
-  if (state.removed.length) {
-    showUndo();
-  }
   requestWakeLock();
 } else {
   renderList();

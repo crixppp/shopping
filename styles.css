@@ -111,10 +111,12 @@ textarea:focus-visible {
 .app {
   min-height: 100svh;
   padding: env(safe-area-inset-top) 0 max(44px, env(safe-area-inset-bottom));
+  transform-origin: top center;
 }
 
 .empty-state,
-.fallback {
+.fallback,
+.complete-state {
   width: var(--list-width);
   margin: 0 auto;
 }
@@ -147,8 +149,7 @@ textarea:focus-visible {
 
 .import-button,
 .confirm-button,
-.confirm-actions button,
-.undo button {
+.confirm-actions button {
   border: 0;
   cursor: pointer;
   user-select: none;
@@ -218,6 +219,33 @@ textarea:focus-visible {
 
 .shopping-list:empty {
   display: none;
+}
+
+.complete-state {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  color: var(--muted);
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.complete-state p {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+body.can-undo .app,
+body.can-undo .item-card {
+  touch-action: pan-up;
+}
+
+.app.is-undo-pulling {
+  will-change: transform;
 }
 
 .item {
@@ -299,94 +327,6 @@ textarea:focus-visible {
   transform: scale(1.025);
   border-color: color-mix(in srgb, var(--accent), var(--border) 60%);
   box-shadow: 0 18px 44px rgba(35, 31, 27, 0.16);
-}
-
-.undo-swipe-zone {
-  position: fixed;
-  z-index: 29;
-  right: 0;
-  left: 0;
-  display: none;
-  touch-action: none;
-}
-
-.undo-swipe-zone.is-top {
-  top: 0;
-  height: max(112px, calc(env(safe-area-inset-top) + 92px));
-}
-
-.undo-swipe-zone.is-bottom {
-  bottom: 0;
-  height: max(112px, calc(env(safe-area-inset-bottom) + 92px));
-}
-
-body.can-undo .undo-swipe-zone {
-  display: block;
-}
-
-.undo {
-  --undo-pull-y: 0;
-  --undo-progress: 0;
-  position: fixed;
-  z-index: 30;
-  left: 50%;
-  bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px));
-  transform: translate3d(-50%, calc(var(--undo-pull-y) * 1px), 0) scale(calc(1 + var(--undo-progress) * 0.035));
-  min-height: 46px;
-  max-width: min(90vw, 360px);
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 8px 6px 18px;
-  background: color-mix(in srgb, var(--surface), transparent 5%);
-  color: var(--text);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  animation: lift-in 170ms ease;
-  will-change: transform;
-  touch-action: none;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
-}
-
-.undo.is-from-top {
-  top: max(18px, calc(env(safe-area-inset-top) + 14px));
-  bottom: auto;
-}
-
-.undo.is-pulling {
-  animation: none;
-  border-color: color-mix(in srgb, var(--accent), var(--border) 58%);
-  box-shadow: 0 18px 38px rgba(35, 31, 27, 0.15);
-}
-
-.undo.is-armed {
-  border-color: color-mix(in srgb, var(--accent), transparent 18%);
-  background: color-mix(in srgb, var(--surface), var(--accent) 11%);
-}
-
-.undo span {
-  color: var(--muted);
-  font-size: 0.94rem;
-}
-
-.undo button {
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: var(--button);
-  color: var(--button-text);
-  font-size: 0.93rem;
-  font-weight: 700;
-  transform: scale(calc(1 + var(--undo-progress) * 0.045));
-  transition: transform 140ms ease, background 140ms ease, color 140ms ease;
-}
-
-.undo.is-armed button {
-  background: var(--accent);
-  color: var(--bg);
 }
 
 .confirm {

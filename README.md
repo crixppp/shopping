@@ -8,7 +8,8 @@ A tiny static shopping-list PWA designed for GitHub Pages.
 - Falls back to a focused paste box when clipboard permissions are restricted.
 - Parses common quantities such as `2kg chicken`, `2 packets rice`, `½ kg tomatoes`, and `2x avocados`.
 - Shows large tappable cards, a subtle progress line, unlimited persistent undo, reordering, dark mode, safe-area support, wake lock support, and offline caching.
-- Restores the latest removed item when you pull down from the top or swipe upward from the bottom, with threshold haptics and a springy release animation.
+- Restores the latest removed item with a downward pull from anywhere on the list, using increasing tremor and a springy recoil as tactile-style feedback.
+- Shows a quiet finished state when every item has been removed, while keeping the full undo history available.
 - Title-cases imported item names and suppresses text selection and touch callouts while long-press reordering.
 - Uses only static files: HTML, CSS, JavaScript, a web app manifest, and a service worker.
 
@@ -38,11 +39,10 @@ The manifest uses `display: standalone`, relative paths, and repository-subpath-
 
 ## Browser limitations
 
-Clipboard, Wake Lock, and Vibration APIs are optional browser features. The app treats them as progressive enhancements:
+Clipboard and Wake Lock APIs are optional browser features. The app treats them as progressive enhancements:
 
 - Clipboard failure falls back to manual paste.
 - Wake Lock failure does not block list use.
-- Vibration failure is silent.
 
 Recent Safari on iPhone, Chrome on Android, Safari on macOS, Chrome, and Edge are the main targets.
 

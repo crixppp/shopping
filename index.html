@@ -26,7 +26,7 @@
         <button class="import-button" id="importButton" type="button">Import list</button>
         <footer class="home-meta" aria-label="App information">
           <span>made by sam gilliot</span>
-          <span>v1.1.0</span>
+          <span>v1.2.0</span>
         </footer>
       </section>
 
@@ -43,15 +43,13 @@
       </section>
 
       <ol class="shopping-list" id="shoppingList" aria-label="Shopping list"></ol>
+
+      <section class="complete-state hidden" id="completeState" aria-live="polite">
+        <p>Nothing left.</p>
+      </section>
     </main>
 
-    <div class="undo-swipe-zone is-top" id="undoSwipeTop" aria-hidden="true"></div>
-    <div class="undo-swipe-zone is-bottom" id="undoSwipeBottom" aria-hidden="true"></div>
-
-    <div class="undo hidden" id="undo" role="group" aria-label="Removed item">
-      <span id="undoStatus" aria-live="polite">Removed</span>
-      <button id="undoButton" type="button">Undo</button>
-    </div>
+    <p class="sr-only" id="undoStatus" aria-live="polite"></p>
 
     <div class="confirm hidden" id="resetConfirm" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
       <div class="confirm-panel">
