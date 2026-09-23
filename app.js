@@ -3,6 +3,9 @@ const UNDO_MS = 4000;
 const LONG_PRESS_MS = 420;
 const RESET_PRESS_MS = 760;
 const MOVE_TOLERANCE = 9;
+const SWIPE_START_ZONE = 132;
+const SWIPE_THRESHOLD = 72;
+const SWIPE_MAX_LIFT = 116;
 
 const app = document.querySelector("#app");
 const emptyState = document.querySelector("#emptyState");
@@ -16,25 +19,29 @@ const previewConfirm = document.querySelector("#previewConfirm");
 const list = document.querySelector("#shoppingList");
 const progressFill = document.querySelector("#progressFill");
 const undo = document.querySelector("#undo");
+const undoStatus = document.querySelector("#undoStatus");
 const undoButton = document.querySelector("#undoButton");
+const undoSwipeZone = document.querySelector("#undoSwipeZone");
 const resetConfirm = document.querySelector("#resetConfirm");
 const resetCancel = document.querySelector("#resetCancel");
 const resetImport = document.querySelector("#resetImport");
 
 let state = {
   items: [],
-  originalCount: 0
+  originalCount: 0,
+  removed: []
 };
 
 let wakeLock = null;
 let wakeIntent = false;
 let undoTimer = 0;
-let lastRemoved = null;
 let completingIds = new Set();
 let suppressNextClick = false;
+let suppressUndoClick = false;
 let drag = null;
 let press = null;
 let resetPress = null;
+let undoSwipe = null;
 
 function createId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
@@ -108,7 +115,7 @@ function parseList(text) {
 }
 
 function saveState() {
-  if (!state.items.length) {
+  if (!state.items.length && !state.removed.length) {
     localStorage.removeItem(STORAGE_KEY);
     return;
   }
@@ -118,14 +125,17 @@ function saveState() {
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-    if (!saved || !Array.isArray(saved.items) || !saved.items.length) {
+    const savedRemoved = Array.isArray(saved?.removed) ? saved.removed : [];
+    if (!saved || !Array.isArray(saved.items) || (!saved.items.length && !savedRemoved.length)) {
       return false;
     }
     state = {
       items: saved.items.filter((item) => item && item.id && item.name),
-      originalCount: Math.max(Number(saved.originalCount) || saved.items.length, saved.items.length)
+      originalCount: Math.max(Number(saved.originalCount) || saved.items.length, saved.items.length),
+      removed: savedRemoved.filter((entry) => entry?.item?.id && entry.item.name && Number.isFinite(entry.index))
     };
-    return state.items.length > 0;
+    state.originalCount = Math.max(state.originalCount, state.items.length + state.removed.length);
+    return state.items.length > 0 || state.removed.length > 0;
   } catch {
     localStorage.removeItem(STORAGE_KEY);
     return false;
@@ -146,11 +156,14 @@ function itemTemplate(item) {
 }
 
 function renderList() {
+  const hasActiveList = state.items.length > 0 || state.removed.length > 0;
   list.innerHTML = state.items.map(itemTemplate).join("");
-  app.classList.toggle("is-empty", !state.items.length);
-  emptyState.classList.toggle("hidden", state.items.length > 0);
+  app.classList.toggle("is-empty", !hasActiveList);
+  emptyState.classList.toggle("hidden", hasActiveList);
+  document.body.classList.toggle("can-undo", state.removed.length > 0);
   fallback.classList.add("hidden");
   preview.classList.add("hidden");
+  updateUndoStatus();
   updateProgress();
 }
 
@@ -205,9 +218,9 @@ function animateFrom(first, options = {}) {
 function beginList(items) {
   state = {
     items,
-    originalCount: items.length
+    originalCount: items.length,
+    removed: []
   };
-  lastRemoved = null;
   hideUndo();
   saveState();
   renderList();
@@ -280,9 +293,9 @@ async function requestWakeLock() {
   }
 }
 
-function vibrate() {
+function vibrate(pattern = 8) {
   if (navigator.vibrate) {
-    navigator.vibrate(8);
+    navigator.vibrate(pattern);
   }
 }
 
@@ -305,52 +318,99 @@ function completeItem(id) {
   vibrate();
 
   window.setTimeout(() => {
+    const currentIndex = state.items.findIndex((item) => item.id === id);
+    if (currentIndex === -1) {
+      completingIds.delete(id);
+      return;
+    }
     const first = measureItems();
-    const [item] = state.items.splice(index, 1);
-    lastRemoved = { item, index };
+    const [item] = state.items.splice(currentIndex, 1);
+    state.removed.push({ item, index: currentIndex });
     completingIds.delete(id);
     saveState();
     renderList();
     animateFrom(first);
-
-    if (!state.items.length) {
-      hideUndo();
-      window.setTimeout(resetToInitial, 280);
-    } else {
-      showUndo();
-    }
+    showUndo();
   }, 190);
 }
 
-function showUndo() {
+function updateUndoStatus() {
+  const count = state.removed.length;
+  undoStatus.textContent = count === 1 ? "Removed" : `${count} removed`;
+  undo.setAttribute("aria-label", count === 1 ? "1 removed item" : `${count} removed items`);
+}
+
+function showUndo(options = {}) {
   window.clearTimeout(undoTimer);
+  updateUndoStatus();
   undo.classList.remove("hidden");
-  undoTimer = window.setTimeout(hideUndo, UNDO_MS);
+  if (options.autoHide !== false) {
+    undoTimer = window.setTimeout(hideUndo, UNDO_MS);
+  }
 }
 
 function hideUndo() {
   window.clearTimeout(undoTimer);
   undo.classList.add("hidden");
+  undo.classList.remove("is-pulling", "is-armed");
+  undo.style.removeProperty("--undo-pull");
+  undo.style.removeProperty("--undo-progress");
 }
 
-function restoreLastRemoved() {
-  if (!lastRemoved) {
-    return;
+function animateUndoRelease(startLift, activated) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return Promise.resolve();
   }
+
+  const keyframes = activated
+    ? [
+        { transform: `translate3d(-50%, ${-startLift}px, 0) scale(1.035)` },
+        { transform: "translate3d(-50%, 9px, 0) scale(0.965)", offset: 0.42 },
+        { transform: "translate3d(-50%, -5px, 0) scale(1.018)", offset: 0.72 },
+        { transform: "translate3d(-50%, 0, 0) scale(1)" }
+      ]
+    : [
+        { transform: `translate3d(-50%, ${-startLift}px, 0) scale(1.015)` },
+        { transform: "translate3d(-50%, 6px, 0) scale(0.985)", offset: 0.58 },
+        { transform: "translate3d(-50%, 0, 0) scale(1)" }
+      ];
+
+  return undo.animate(keyframes, {
+    duration: activated ? 430 : 300,
+    easing: "cubic-bezier(.2,.8,.2,1)"
+  }).finished.catch(() => {});
+}
+
+function restoreLastRemoved(options = {}) {
+  const removed = state.removed.pop();
+  if (!removed) {
+    return false;
+  }
+
   const first = measureItems();
-  const index = Math.min(lastRemoved.index, state.items.length);
-  state.items.splice(index, 0, lastRemoved.item);
-  lastRemoved = null;
-  hideUndo();
+  const index = Math.min(Math.max(removed.index, 0), state.items.length);
+  state.items.splice(index, 0, removed.item);
   saveState();
   renderList();
   animateFrom(first);
+  if (options.keepVisible && !state.removed.length) {
+    undoStatus.textContent = "Restored";
+    undo.setAttribute("aria-label", "Item restored");
+  }
+  vibrate(options.fromSwipe ? [10, 22, 10] : 8);
+
+  if (state.removed.length) {
+    showUndo();
+  } else if (!options.keepVisible) {
+    hideUndo();
+  }
+  return true;
 }
 
 function resetToInitial() {
-  state = { items: [], originalCount: 0 };
+  state = { items: [], originalCount: 0, removed: [] };
   completingIds.clear();
-  lastRemoved = null;
+  undoSwipe = null;
   hideUndo();
   localStorage.removeItem(STORAGE_KEY);
   renderList();
@@ -513,6 +573,103 @@ function handleCardClick(event) {
   completeItem(element.dataset.id);
 }
 
+function setUndoPull(pull) {
+  const lift = Math.min(SWIPE_MAX_LIFT, pull * (pull < SWIPE_THRESHOLD ? 0.82 : 0.58) + Math.max(0, pull - SWIPE_THRESHOLD) * 0.16);
+  undo.style.setProperty("--undo-pull", lift.toFixed(2));
+  undo.style.setProperty("--undo-progress", Math.min(1, pull / SWIPE_THRESHOLD).toFixed(3));
+  return lift;
+}
+
+function startUndoSwipe(event) {
+  if (!state.removed.length || undoSwipe || event.button > 0 || !resetConfirm.classList.contains("hidden")) {
+    return;
+  }
+  if (event.clientY < window.innerHeight - SWIPE_START_ZONE) {
+    return;
+  }
+
+  window.clearTimeout(undoTimer);
+  showUndo({ autoHide: false });
+  undo.classList.add("is-pulling");
+  undoSwipe = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    pull: 0,
+    lift: 0,
+    armed: false,
+    thresholdHaptic: false,
+    moved: false
+  };
+
+  try {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  } catch {
+    // The gesture still tracks through the window when capture is unavailable.
+  }
+}
+
+function moveUndoSwipe(event) {
+  if (!undoSwipe || event.pointerId !== undoSwipe.pointerId) {
+    return;
+  }
+
+  const dx = event.clientX - undoSwipe.startX;
+  const pull = Math.max(0, undoSwipe.startY - event.clientY);
+  if (Math.abs(dx) > pull * 1.25 && Math.abs(dx) > MOVE_TOLERANCE) {
+    endUndoSwipe(event, true);
+    return;
+  }
+  if (pull < 2) {
+    return;
+  }
+
+  event.preventDefault();
+  undoSwipe.moved = undoSwipe.moved || pull > MOVE_TOLERANCE;
+  undoSwipe.pull = pull;
+  undoSwipe.lift = setUndoPull(pull);
+  const armed = pull >= SWIPE_THRESHOLD;
+  undo.classList.toggle("is-armed", armed);
+  undoSwipe.armed = armed;
+
+  if (armed && !undoSwipe.thresholdHaptic) {
+    undoSwipe.thresholdHaptic = true;
+    vibrate(12);
+  }
+}
+
+function endUndoSwipe(event, cancelled = false) {
+  if (!undoSwipe || event.pointerId !== undoSwipe.pointerId) {
+    return;
+  }
+
+  const swipe = undoSwipe;
+  undoSwipe = null;
+  undo.classList.remove("is-pulling", "is-armed");
+  undo.style.removeProperty("--undo-pull");
+  undo.style.removeProperty("--undo-progress");
+
+  const activated = !cancelled && swipe.armed;
+  if (swipe.moved) {
+    suppressUndoClick = true;
+    window.setTimeout(() => {
+      suppressUndoClick = false;
+    }, 360);
+  }
+
+  animateUndoRelease(swipe.lift, activated).then(() => {
+    if (!state.removed.length) {
+      hideUndo();
+    }
+  });
+
+  if (activated) {
+    restoreLastRemoved({ fromSwipe: true, keepVisible: true });
+  } else {
+    undoTimer = window.setTimeout(hideUndo, 1000);
+  }
+}
+
 function showResetConfirm() {
   if (!state.items.length) {
     return;
@@ -534,7 +691,7 @@ function clearResetPress() {
 }
 
 function maybeStartBackgroundPress(event) {
-  if (!state.items.length || event.target.closest(".item, button, textarea, .undo, .confirm")) {
+  if (!state.items.length || event.target.closest(".item, button, textarea, .undo, .undo-swipe-zone, .confirm")) {
     return;
   }
   resetPress = {
@@ -578,12 +735,23 @@ function registerServiceWorker() {
 importButton.addEventListener("click", importFromClipboard);
 pasteConfirm.addEventListener("click", () => handleImportText(pasteInput.value));
 previewConfirm.addEventListener("click", importPreviewText);
-undo.addEventListener("click", restoreLastRemoved);
+undo.addEventListener("click", (event) => {
+  if (suppressUndoClick) {
+    event.preventDefault();
+    return;
+  }
+  restoreLastRemoved();
+});
+undo.addEventListener("pointerdown", startUndoSwipe);
+undoSwipeZone.addEventListener("pointerdown", startUndoSwipe);
 list.addEventListener("click", handleCardClick);
 list.addEventListener("pointerdown", handlePointerDown);
 window.addEventListener("pointermove", handlePointerMove, { passive: false });
+window.addEventListener("pointermove", moveUndoSwipe, { passive: false });
 window.addEventListener("pointerup", handlePointerUp);
 window.addEventListener("pointercancel", handlePointerUp);
+window.addEventListener("pointerup", endUndoSwipe);
+window.addEventListener("pointercancel", (event) => endUndoSwipe(event, true));
 document.addEventListener("pointerdown", maybeStartBackgroundPress);
 document.addEventListener("pointermove", handleBackgroundMove);
 document.addEventListener("pointerup", clearResetPress);
@@ -607,6 +775,9 @@ document.addEventListener("pointerdown", () => {
 
 if (loadState()) {
   renderList();
+  if (state.removed.length) {
+    showUndo();
+  }
   requestWakeLock();
 } else {
   renderList();

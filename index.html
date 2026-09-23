@@ -41,8 +41,10 @@
       <ol class="shopping-list" id="shoppingList" aria-label="Shopping list"></ol>
     </main>
 
+    <div class="undo-swipe-zone" id="undoSwipeZone" aria-hidden="true"></div>
+
     <div class="undo hidden" id="undo" role="group" aria-label="Removed item">
-      <span aria-live="polite">Removed</span>
+      <span id="undoStatus" aria-live="polite">Removed</span>
       <button id="undoButton" type="button">Undo</button>
     </div>
 
